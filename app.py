@@ -223,20 +223,26 @@ else:
                     data['MA50'] = data['Close'].rolling(window=50).mean()
                     data['EMA200'] = data['Close'].ewm(span=200, adjust=False).mean()
                     
-                    stock_data[ticker] = data
-                    
-                    # Store info
+                    # Store info (wrapped in try-except for Streamlit Cloud rate limits on info API)
+                    try:
+                        info = tkr.info
+                        pe_val = info.get('trailingPE', info.get('forwardPE', 'N/A'))
+                        mc_val = info.get('marketCap', 'N/A')
+                        high_val = info.get('fiftyTwoWeekHigh', 'N/A')
+                        low_val = info.get('fiftyTwoWeekLow', 'N/A')
+                    except Exception as info_e:
+                        print(f"Failed to fetch info for {ticker}: {info_e}")
+                        pe_val, mc_val, high_val, low_val = 'N/A', 'N/A', 'N/A', 'N/A'
+
                     stock_info[ticker] = {
-                        '52w_high': info.get('fiftyTwoWeekHigh', 'N/A'),
-                        '52w_low': info.get('fiftyTwoWeekLow', 'N/A'),
-                        'pe': info.get('trailingPE', info.get('forwardPE', 'N/A')),
-                        'market_cap': info.get('marketCap', 'N/A')
+                        '52w_high': high_val,
+                        '52w_low': low_val,
+                        'pe': pe_val,
+                        'market_cap': mc_val
                     }
                     valid_tickers.append(ticker)
             except Exception as e:
-                st.error(f"Error for {ticker}: {str(e)}")
-                import traceback
-                st.error(traceback.format_exc())
+                st.error(f"{ticker} 發生錯誤 (可能為遠端抓取限制): {str(e)}")
                 
     if not stock_data:
         st.error("選定股票的所有資料皆無法獲取！")
