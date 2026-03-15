@@ -233,21 +233,26 @@ else:
                     
                     stock_data[ticker] = data
                     
-                    # Store info using summary_detail
+                    # Store info using summary_detail or calculate it from history
+                    pe_val, mc_val = 'N/A', 'N/A'
                     try:
                         summary = tkr.summary_detail
-                        if ticker in summary and isinstance(summary[ticker], dict):
+                        if isinstance(summary, dict) and ticker in summary and isinstance(summary[ticker], dict):
                             info = summary[ticker]
                             pe_val = info.get('trailingPE', info.get('forwardPE', 'N/A'))
                             mc_val = info.get('marketCap', 'N/A')
-                            high_val = info.get('fiftyTwoWeekHigh', 'N/A')
-                            low_val = info.get('fiftyTwoWeekLow', 'N/A')
                         else:
-                            pe_val, mc_val, high_val, low_val = 'N/A', 'N/A', 'N/A', 'N/A'
+                            # Fallback to price endpoint
+                            price_data = tkr.price
+                            if isinstance(price_data, dict) and ticker in price_data and isinstance(price_data[ticker], dict):
+                                mc_val = price_data[ticker].get('marketCap', 'N/A')
                     except Exception as info_e:
                         print(f"Failed to fetch info for {ticker}: {info_e}")
-                        pe_val, mc_val, high_val, low_val = 'N/A', 'N/A', 'N/A', 'N/A'
-
+                        
+                    # Calculate true 52W high and low from the 1y history we just downloaded successfully!
+                    high_val = data['high'].max() if not data.empty else 'N/A'
+                    low_val = data['low'].min() if not data.empty else 'N/A'
+                    
                     stock_info[ticker] = {
                         '52w_high': high_val,
                         '52w_low': low_val,
