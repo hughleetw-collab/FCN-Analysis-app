@@ -1,10 +1,8 @@
-import streamlit as st
-import yfinance as yf
 import pandas as pd
 import datetime
 import plotly.graph_objects as go
 import numpy as np
-from curl_cffi import requests as cffi_requests
+from yahooquery import Ticker
 
 # Set page config
 st.set_page_config(page_title="FCN 結構型商品分析報告", layout="wide", initial_sidebar_state="expanded")
@@ -209,29 +207,42 @@ else:
     valid_tickers = []
     
     with st.spinner('正在獲取最新市場庫存與價格數據...'):
-        session = cffi_requests.Session(impersonate='chrome')
         for ticker in tickers:
             try:
-                # Need specific start and end to get 1 year range securely
-                data = yf.download(ticker, start=start_date, end=end_date, progress=False, session=session)
-                tkr = yf.Ticker(ticker, session=session)
-                info = tkr.info
+                # Use yahooquery instead of yfinance for better rate limit handling
+                tkr = Ticker(ticker)
                 
-                if not data.empty:
-                    # Fix multi-level columns if pandas>2 and yfinance structure changed
-                    if isinstance(data.columns, pd.MultiIndex):
-                        data.columns = data.columns.droplevel(1)
-                        
-                    data['MA50'] = data['Close'].rolling(window=50).mean()
-                    data['EMA200'] = data['Close'].ewm(span=200, adjust=False).mean()
+                # Retrieve 1 year of historical data
+                data_dict = tkr.history(period='1y')
+                
+                # yahooquery returns a MultiIndex dataframe (symbol, date) if successful
+                if isinstance(data_dict, pd.DataFrame) and not data_dict.empty:
+                    # Reset index to easily work with the 'date' column
+                    data = data_dict.reset_index()
+                    # Filter just for this ticker (in case it returns multiple, though it shouldn't here)
+                    data = data[data['symbol'] == ticker]
+                    # Set date back as index, ensure DatetimeIndex
+                    data.set_index('date', inplace=True)
+                    data.index = pd.to_datetime(data.index)
                     
-                    # Store info (wrapped in try-except for Streamlit Cloud rate limits on info API)
+                    # Compute MAs
+                    # yahooquery uses lowercase columns: open, high, low, close, volume, adjclose
+                    data['MA50'] = data['close'].rolling(window=50).mean()
+                    data['EMA200'] = data['close'].ewm(span=200, adjust=False).mean()
+                    
+                    stock_data[ticker] = data
+                    
+                    # Store info using summary_detail
                     try:
-                        info = tkr.info
-                        pe_val = info.get('trailingPE', info.get('forwardPE', 'N/A'))
-                        mc_val = info.get('marketCap', 'N/A')
-                        high_val = info.get('fiftyTwoWeekHigh', 'N/A')
-                        low_val = info.get('fiftyTwoWeekLow', 'N/A')
+                        summary = tkr.summary_detail
+                        if ticker in summary and isinstance(summary[ticker], dict):
+                            info = summary[ticker]
+                            pe_val = info.get('trailingPE', info.get('forwardPE', 'N/A'))
+                            mc_val = info.get('marketCap', 'N/A')
+                            high_val = info.get('fiftyTwoWeekHigh', 'N/A')
+                            low_val = info.get('fiftyTwoWeekLow', 'N/A')
+                        else:
+                            pe_val, mc_val, high_val, low_val = 'N/A', 'N/A', 'N/A', 'N/A'
                     except Exception as info_e:
                         print(f"Failed to fetch info for {ticker}: {info_e}")
                         pe_val, mc_val, high_val, low_val = 'N/A', 'N/A', 'N/A', 'N/A'
@@ -259,7 +270,7 @@ else:
                 data = stock_data[ticker]
                 s_info = stock_info[ticker]
                 
-                last_close = float(data['Close'].iloc[-1])
+                last_close = float(data['close'].iloc[-1])
                 
                 ako_price = last_close * (ako_pct / 100.0)
                 k_price = last_close * (k_pct / 100.0)
@@ -286,7 +297,7 @@ else:
                 
                 # Candlestick chart
                 fig.add_trace(go.Candlestick(
-                    x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'],
+                    x=data.index, open=data['open'], high=data['high'], low=data['low'], close=data['close'],
                     name='K Line', increasing_line_color='#22c55e', decreasing_line_color='#ef4444',
                     increasing_fillcolor='#22c55e', decreasing_fillcolor='#ef4444', line_width=1
                 ))
