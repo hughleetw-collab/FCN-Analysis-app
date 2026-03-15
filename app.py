@@ -251,6 +251,21 @@ else:
                     except Exception as info_e:
                         print(f"Failed to fetch info for {ticker} via yq: {info_e}")
                         
+                    # Alpha Vantage Fallback (Using User API Key)
+                    if pe_val == 'N/A' or mc_val == 'N/A':
+                        try:
+                            import requests as std_requests
+                            av_url = f'https://www.alphavantage.co/query?function=OVERVIEW&symbol={ticker}&apikey=CYW0ZERXVLCU6XAH'
+                            av_res = std_requests.get(av_url, timeout=5)
+                            if av_res.status_code == 200:
+                                av_data = av_res.json()
+                                if mc_val == 'N/A' and av_data.get('MarketCapitalization') not in [None, 'None']:
+                                    mc_val = float(av_data.get('MarketCapitalization'))
+                                if pe_val == 'N/A' and av_data.get('PERatio') not in [None, 'None']:
+                                    pe_val = float(av_data.get('PERatio'))
+                        except Exception as av_e:
+                            print(f"Alpha Vantage fallback failed for {ticker}: {av_e}")
+                        
                     # Absolute Fallback: Finviz Scraper if API is blocked
                     if pe_val == 'N/A' or mc_val == 'N/A':
                         try:
@@ -306,13 +321,22 @@ else:
                 
                 # Format metrics
                 mc = s_info['market_cap']
-                if isinstance(mc, (int, float)):
-                    mc_str = f"${mc/1e9:.1f}B" if mc >= 1e9 else (f"${mc/1e6:.1f}M" if mc >= 1e6 else f"${mc}")
-                else:
-                    mc_str = "N/A"
-                    
-                pe_val = s_info['pe']
-                pe_str = f"{pe_val:.2f}" if isinstance(pe_val, float) else pe_val
+                mc_str = "N/A"
+                if mc != 'N/A':
+                    try:
+                        mc_val = float(mc)
+                        mc_str = f"${mc_val/1e9:.1f}B" if mc_val >= 1e9 else (f"${mc_val/1e6:.1f}M" if mc_val >= 1e6 else f"${mc_val}")
+                    except (ValueError, TypeError):
+                        if isinstance(mc, str) and (mc.endswith('B') or mc.endswith('M')):
+                            mc_str = f"${mc}"
+                        else:
+                            mc_str = str(mc)
+                            
+                pe = s_info['pe']
+                try:
+                    pe_str = f"{float(pe):.2f}" if pe != 'N/A' else "N/A"
+                except (ValueError, TypeError):
+                    pe_str = str(pe)
                 
                 high_val = s_info['52w_high']
                 high_str = f"${high_val:.2f}" if isinstance(high_val, float) else high_val
