@@ -4,6 +4,7 @@ import datetime
 import plotly.graph_objects as go
 import numpy as np
 import io
+from bs4 import BeautifulSoup
 from curl_cffi import requests as cffi_requests
 from yahooquery import Ticker
 
@@ -272,25 +273,21 @@ else:
                         except Exception as av_e:
                             debug_logs.append(f"av error: {av_e}")
                         
-                    # Absolute Fallback: Finviz Scraper if API is blocked
+                    # Absolute Fallback: Yahoo Finance HTML Scraper
                     if pe_val == 'N/A' or mc_val == 'N/A':
                         try:
-                            fv_url = f'https://finviz.com/quote.ashx?t={ticker}'
-                            fv_headers = {'User-Agent': 'Mozilla/5.0'}
-                            fv_res = cffi_requests.get(fv_url, impersonate='chrome', headers=fv_headers, timeout=5)
-                            fv_dfs = pd.read_html(io.StringIO(fv_res.text))
-                            for fv_df in fv_dfs:
-                                if 'Market Cap' in fv_df.values or 'P/E' in fv_df.values:
-                                    for i in range(0, 12, 2):
-                                        if i+1 < len(fv_df.columns):
-                                            for j in range(len(fv_df)):
-                                                if mc_val == 'N/A' and fv_df.iloc[j, i] == 'Market Cap':
-                                                    mc_val = str(fv_df.iloc[j, i+1])
-                                                elif pe_val == 'N/A' and fv_df.iloc[j, i] == 'P/E':
-                                                    pe_val = str(fv_df.iloc[j, i+1])
-                                    break
-                        except Exception as fv_e:
-                            debug_logs.append(f"fv error: {fv_e}")
+                            yf_url = f'https://finance.yahoo.com/quote/{ticker}'
+                            yf_headers = {'User-Agent': 'Mozilla/5.0'}
+                            yf_res = cffi_requests.get(yf_url, impersonate='chrome', headers=yf_headers, timeout=5)
+                            soup = BeautifulSoup(yf_res.text, 'html.parser')
+                            for li in soup.find_all('li'):
+                                text = li.text.lower()
+                                if mc_val == 'N/A' and 'market cap' in text and 'intraday' in text:
+                                    mc_val = li.text.split('intraday)')[-1].strip()
+                                if pe_val == 'N/A' and 'pe ratio' in text.replace('/', '') and '(ttm)' in text:
+                                    pe_val = li.text.split('(TTM)')[-1].strip()
+                        except Exception as yf_e:
+                            debug_logs.append(f"yf scraper error: {yf_e}")
                             
                     # Calculate true 52W high and low from the 1y history we just downloaded successfully!
                     high_val = data['high'].max() if not data.empty else 'N/A'
@@ -330,18 +327,30 @@ else:
                 mc = s_info['market_cap']
                 mc_str = "N/A"
                 if mc != 'N/A':
-                    try:
-                        mc_val = float(mc)
-                        mc_str = f"${mc_val/1e9:.1f}B" if mc_val >= 1e9 else (f"${mc_val/1e6:.1f}M" if mc_val >= 1e6 else f"${mc_val}")
-                    except (ValueError, TypeError):
-                        if isinstance(mc, str) and (mc.endswith('B') or mc.endswith('M')):
+                    if isinstance(mc, str):
+                        mc = mc.replace(',', '')
+                        if 'T' in mc:
+                            try: mc_str = f"${float(mc.replace('T', '')) * 1000:.1f}B"
+                            except: mc_str = f"${mc}"
+                        elif 'B' in mc:
+                            mc_str = f"${mc}"
+                        elif 'M' in mc:
                             mc_str = f"${mc}"
                         else:
+                            try:
+                                mc_val = float(mc)
+                                mc_str = f"${mc_val/1e9:.1f}B" if mc_val >= 1e9 else (f"${mc_val/1e6:.1f}M" if mc_val >= 1e6 else f"${mc_val}")
+                            except: mc_str = mc
+                    else:
+                        try:
+                            mc_val = float(mc)
+                            mc_str = f"${mc_val/1e9:.1f}B" if mc_val >= 1e9 else (f"${mc_val/1e6:.1f}M" if mc_val >= 1e6 else f"${mc_val}")
+                        except:
                             mc_str = str(mc)
                             
                 pe = s_info['pe']
                 try:
-                    pe_str = f"{float(pe):.2f}" if pe != 'N/A' else "N/A"
+                    pe_str = f"{float(str(pe).replace(',', '')):.2f}" if pe != 'N/A' else "N/A"
                 except (ValueError, TypeError):
                     pe_str = str(pe)
                 
