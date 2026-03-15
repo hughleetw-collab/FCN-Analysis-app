@@ -325,7 +325,12 @@ else:
                     xaxis_rangeslider_visible=False,
                     plot_bgcolor="white",
                     paper_bgcolor="white",
-                    xaxis=dict(showgrid=True, gridcolor='#f1f5f9', tickfont=dict(size=10, color="#64748b")),
+                    xaxis=dict(
+                        showgrid=True, 
+                        gridcolor='#f1f5f9', 
+                        tickfont=dict(size=10, color="#64748b"),
+                        range=[data.index.min(), data.index.max() + pd.Timedelta(days=90)]
+                    ),
                     yaxis=dict(showgrid=True, gridcolor='#f1f5f9', tickfont=dict(size=10, color="#64748b"), side='right')
                 )
                 
