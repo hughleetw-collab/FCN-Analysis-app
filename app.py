@@ -3,6 +3,8 @@ import pandas as pd
 import datetime
 import plotly.graph_objects as go
 import numpy as np
+import io
+from curl_cffi import requests as cffi_requests
 from yahooquery import Ticker
 
 # Set page config
@@ -247,7 +249,27 @@ else:
                             if isinstance(price_data, dict) and ticker in price_data and isinstance(price_data[ticker], dict):
                                 mc_val = price_data[ticker].get('marketCap', 'N/A')
                     except Exception as info_e:
-                        print(f"Failed to fetch info for {ticker}: {info_e}")
+                        print(f"Failed to fetch info for {ticker} via yq: {info_e}")
+                        
+                    # Absolute Fallback: Finviz Scraper if API is blocked
+                    if pe_val == 'N/A' or mc_val == 'N/A':
+                        try:
+                            fv_url = f'https://finviz.com/quote.ashx?t={ticker}'
+                            fv_headers = {'User-Agent': 'Mozilla/5.0'}
+                            fv_res = cffi_requests.get(fv_url, impersonate='chrome', headers=fv_headers, timeout=5)
+                            fv_dfs = pd.read_html(io.StringIO(fv_res.text))
+                            for fv_df in fv_dfs:
+                                if 'Market Cap' in fv_df.values or 'P/E' in fv_df.values:
+                                    for i in range(0, 12, 2):
+                                        if i+1 < len(fv_df.columns):
+                                            for j in range(len(fv_df)):
+                                                if mc_val == 'N/A' and fv_df.iloc[j, i] == 'Market Cap':
+                                                    mc_val = str(fv_df.iloc[j, i+1])
+                                                elif pe_val == 'N/A' and fv_df.iloc[j, i] == 'P/E':
+                                                    pe_val = str(fv_df.iloc[j, i+1])
+                                    break
+                        except Exception as fv_e:
+                            print(f"Finviz fallback failed for {ticker}: {fv_e}")
                         
                     # Calculate true 52W high and low from the 1y history we just downloaded successfully!
                     high_val = data['high'].max() if not data.empty else 'N/A'

@@ -4,3 +4,6 @@ yfinance
 plotly
 numpy
 yahooquery
+curl_cffi
+lxml
+html5lib
