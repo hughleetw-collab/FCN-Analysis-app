@@ -4,6 +4,7 @@ import pandas as pd
 import datetime
 import plotly.graph_objects as go
 import numpy as np
+from curl_cffi import requests as cffi_requests
 
 # Set page config
 st.set_page_config(page_title="FCN 結構型商品分析報告", layout="wide", initial_sidebar_state="expanded")
@@ -208,11 +209,12 @@ else:
     valid_tickers = []
     
     with st.spinner('正在獲取最新市場庫存與價格數據...'):
+        session = cffi_requests.Session(impersonate='chrome')
         for ticker in tickers:
             try:
                 # Need specific start and end to get 1 year range securely
-                data = yf.download(ticker, start=start_date, end=end_date, progress=False)
-                tkr = yf.Ticker(ticker)
+                data = yf.download(ticker, start=start_date, end=end_date, progress=False, session=session)
+                tkr = yf.Ticker(ticker, session=session)
                 info = tkr.info
                 
                 if not data.empty:
