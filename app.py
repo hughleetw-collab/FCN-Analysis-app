@@ -237,6 +237,8 @@ else:
                     
                     # Store info using summary_detail or calculate it from history
                     pe_val, mc_val = 'N/A', 'N/A'
+                    debug_logs = []
+                    
                     try:
                         summary = tkr.summary_detail
                         if isinstance(summary, dict) and ticker in summary and isinstance(summary[ticker], dict):
@@ -249,7 +251,7 @@ else:
                             if isinstance(price_data, dict) and ticker in price_data and isinstance(price_data[ticker], dict):
                                 mc_val = price_data[ticker].get('marketCap', 'N/A')
                     except Exception as info_e:
-                        print(f"Failed to fetch info for {ticker} via yq: {info_e}")
+                        debug_logs.append(f"yq error: {info_e}")
                         
                     # Alpha Vantage Fallback (Using User API Key)
                     if pe_val == 'N/A' or mc_val == 'N/A':
@@ -263,8 +265,12 @@ else:
                                     mc_val = float(av_data.get('MarketCapitalization'))
                                 if pe_val == 'N/A' and av_data.get('PERatio') not in [None, 'None']:
                                     pe_val = float(av_data.get('PERatio'))
+                            else:
+                                debug_logs.append(f"av code: {av_res.status_code}")
+                                if av_res.status_code != 200:
+                                    debug_logs.append(av_res.text[:100])
                         except Exception as av_e:
-                            print(f"Alpha Vantage fallback failed for {ticker}: {av_e}")
+                            debug_logs.append(f"av error: {av_e}")
                         
                     # Absolute Fallback: Finviz Scraper if API is blocked
                     if pe_val == 'N/A' or mc_val == 'N/A':
@@ -284,8 +290,8 @@ else:
                                                     pe_val = str(fv_df.iloc[j, i+1])
                                     break
                         except Exception as fv_e:
-                            print(f"Finviz fallback failed for {ticker}: {fv_e}")
-                        
+                            debug_logs.append(f"fv error: {fv_e}")
+                            
                     # Calculate true 52W high and low from the 1y history we just downloaded successfully!
                     high_val = data['high'].max() if not data.empty else 'N/A'
                     low_val = data['low'].min() if not data.empty else 'N/A'
@@ -294,7 +300,8 @@ else:
                         '52w_high': high_val,
                         '52w_low': low_val,
                         'pe': pe_val,
-                        'market_cap': mc_val
+                        'market_cap': mc_val,
+                        'debug': " | ".join(debug_logs)
                     }
                     valid_tickers.append(ticker)
             except Exception as e:
@@ -412,11 +419,16 @@ else:
     </div>
 </div>
 
-<div class="card-footer">
-    <span>52W High: <span class="f-val">{high_str}</span></span>
-    <span>52W Low: <span class="f-val">{low_str}</span></span>
-    <span>P/E: <span class="f-val">{pe_str}</span></span>
-    <span>市值: <span class="f-val">{mc_str}</span></span>
+<div style="display: flex; justify-content: space-between; align-items: center; padding-top: 15px; border-top: 1px solid #334155;">
+    <div style="display: flex; gap: 20px;">
+        <div><span style="color: #94a3b8; font-size: 0.85rem;">52W High</span><br><span style="color: #f8fafc; font-weight: 500;">{high_str}</span></div>
+        <div><span style="color: #94a3b8; font-size: 0.85rem;">52W Low</span><br><span style="color: #f8fafc; font-weight: 500;">{low_str}</span></div>
+    </div>
+    <div style="display: flex; gap: 20px; text-align: right;">
+        <div><span style="color: #94a3b8; font-size: 0.85rem;">P/E Ratio</span><br><span style="color: #f8fafc; font-weight: 500;">{pe_str}</span></div>
+        <div><span style="color: #94a3b8; font-size: 0.85rem;">Market Cap</span><br><span style="color: #f8fafc; font-weight: 500;">{mc_str}</span></div>
+    </div>
 </div>
+<!-- Debug: {s_info.get('debug', '')} -->
 </div>
 """, unsafe_allow_html=True)
